@@ -13,27 +13,38 @@ st.set_page_config(page_title="Multi-LLM Model Orchestrator", layout="wide")
 with st.sidebar:
     st.header("⚙️ Configuration & Models")
     
-    # 1. API Keys Input
-    st.subheader("API Keys")
+    # 1. API Keys Input with direct links to get keys
+    st.subheader("API Keys & Links")
+    
     openai_key = st.text_input("OpenAI API Key", type="password")
+    st.markdown("[Get OpenAI API Key](https://platform.openai.com/api-keys)")
+    
     anthropic_key = st.text_input("Anthropic API Key", type="password")
+    st.markdown("[Get Anthropic API Key](https://console.anthropic.com/)")
+    
+    gemini_key = st.text_input("Gemini API Key", type="password")
+    st.markdown("[Get Gemini API Key](https://aistudio.google.com/app/apikey)")
+    
     groq_key = st.text_input("Groq API Key", type="password")
+    st.markdown("[Get Groq API Key](https://console.groq.com/keys)")
     
     st.divider()
     
-    # 2. Model Selections
+    # 2. Model Selections with site links
     st.subheader("Select Models")
-    use_gpt = st.checkbox("GPT-4o (OpenAI)", value=True)
-    use_claude = st.checkbox("Claude 3.5 Sonnet (Anthropic)", value=True)
-    use_llama = st.checkbox("Llama 3 / Ollama (Groq/Local)", value=True)
+    use_gpt = st.checkbox("GPT-4o ([OpenAI Site](https://openai.com))", value=True)
+    use_claude = st.checkbox("Claude 3.5 Sonnet ([Anthropic Site](https://www.anthropic.com))", value=True)
+    use_gemini = st.checkbox("Gemini ([Google AI Site](https://ai.google.dev))", value=True)
+    use_llama = st.checkbox("Llama 3 / Ollama ([Ollama Site](https://ollama.com))", value=True)
     
     st.divider()
     
     # 3. Consensus / Model Weights
     st.subheader("Model Weights")
-    weight_gpt = st.slider("GPT Weight", 0.0, 1.0, 0.4)
-    weight_claude = st.slider("Claude Weight", 0.0, 1.0, 0.4)
-    weight_llama = st.slider("Llama Weight", 0.0, 1.0, 0.2)
+    weight_gpt = st.slider("GPT Weight", 0.0, 1.0, 0.25)
+    weight_claude = st.slider("Claude Weight", 0.0, 1.0, 0.25)
+    weight_gemini = st.slider("Gemini Weight", 0.0, 1.0, 0.25)
+    weight_llama = st.slider("Llama Weight", 0.0, 1.0, 0.25)
 
 # ==========================================
 # MAIN PAGE: Title, File Uploads, & Prompts
@@ -83,8 +94,7 @@ if uploaded_files:
 # Prompt Input Area
 user_prompt = st.text_area("Enter your prompt:", "e.g., Review the attached document and summarize key insights.")
 
-if st.button("🚀 Run Multi-LLM Engine with Ollama"):
+if st.button("🚀 Run Multi-LLM Engine"):
     # Combine prompt text and contents extracted from documents/files
     full_payload = user_prompt + "\n\n" + "\n".join(file_contexts)
     st.write("Processing query with attached context across selected models...")
-    # Add your multi-LLM execution/consensus code logic here using 'full_payload'
