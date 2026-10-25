@@ -45,9 +45,13 @@ with st.sidebar:
     
     st.subheader("Select Active Models")
     use_groq = st.checkbox("Groq (Llama 3.1 Instant)", value=True)
-    use_gemini = st.checkbox("Gemini (3.8 Flash)", value=True)
+    use_gemini = st.checkbox("Gemini (1.5 Flash)", value=True)
     use_gpt = st.checkbox("GPT-4o (Paid)", value=False)
     use_claude = st.checkbox("Claude 3.5 Sonnet (Paid)", value=False)
+    
+    st.divider()
+    st.subheader("⚡ Performance Settings")
+    enable_synthesis = st.checkbox("Enable Stage-2 Cross-Synthesis", value=False, help="Uncheck for instant single-pass parallel results without the second synthesis wait time.")
     
     st.divider()
     
@@ -107,7 +111,7 @@ if uploaded_files:
 st.divider()
 
 # ==========================================
-# CHAT INTERFACE & CONCURRENT SYNTHESIS
+# CHAT INTERFACE & CONCURRENT EXECUTION
 # ==========================================
 st.subheader("💬 Chat & Consensus Output")
 
@@ -136,20 +140,21 @@ if raw_input:
         st.markdown(user_prompt)
 
     with st.chat_message("assistant"):
-        with st.status("Running parallel models and synthesizing consensus...", expanded=True) as status:
+        with st.status("Running parallel model requests...", expanded=True) as status:
             
             if file_contexts:
                 full_payload = f"Context Documents:\n" + "\n".join(file_contexts) + f"\n\nUser Request: {user_prompt}"
             else:
                 full_payload = user_prompt
             
-            # 1. Parallel Workers with active production endpoints
+            # 1. Parallel Workers
             def query_groq():
                 try:
                     client = Groq(api_key=groq_key)
                     res = client.chat.completions.create(
                         model="llama-3.1-8b-instant",
-                        messages=[{"role": "user", "content": full_payload}]
+                        messages=[{"role": "user", "content": full_payload}],
+                        timeout=10
                     )
                     return "Groq (Llama 3.1 Instant)", res.choices[0].message.content
                 except Exception as e:
@@ -158,18 +163,19 @@ if raw_input:
             def query_gemini():
                 try:
                     genai.configure(api_key=gemini_key)
-                    model = genai.GenerativeModel("gemini-3.8-flash")
+                    model = genai.GenerativeModel("gemini-1.5-flash")
                     res = model.generate_content(full_payload)
-                    return "Gemini (3.8 Flash)", res.text
+                    return "Gemini (1.5 Flash)", res.text
                 except Exception as e:
-                    return "Gemini (3.8 Flash)", f"Error: {e}"
+                    return "Gemini (1.5 Flash)", f"Error: {e}"
 
             def query_gpt():
                 try:
                     client = OpenAI(api_key=openai_key)
                     res = client.chat.completions.create(
                         model="gpt-4o",
-                        messages=[{"role": "user", "content": full_payload}]
+                        messages=[{"role": "user", "content": full_payload}],
+                        timeout=10
                     )
                     return "GPT-4o", res.choices[0].message.content
                 except Exception as e:
@@ -181,7 +187,8 @@ if raw_input:
                     res = client.messages.create(
                         model="claude-3-5-sonnet-20241022",
                         max_tokens=1024,
-                        messages=[{"role": "user", "content": full_payload}]
+                        messages=[{"role": "user", "content": full_payload}],
+                        timeout=10
                     )
                     return "Claude 3.5 Sonnet", res.content[0].text
                 except Exception as e:
@@ -199,7 +206,6 @@ if raw_input:
 
             model_responses = {}
             
-            # Execute concurrently via threads
             if tasks:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                     future_to_model = {executor.submit(task): task for task in tasks}
@@ -209,11 +215,11 @@ if raw_input:
             else:
                 st.warning("No models selected or API keys missing.")
 
-            # 2. Stage 2: Cross-Synthesis / Refinement Pass
+            # 2. Optional Stage 2: Synthesis Pass
             consolidated_output = ""
             valid_responses = {k: v for k, v in model_responses.items() if not v.startswith("Error:")}
             
-            if len(valid_responses) > 0:
+            if enable_synthesis and len(valid_responses) > 0:
                 synthesis_prompt = f"""You are the Master Orchestrator AI. 
 The user asked: '{user_prompt}'
 
@@ -229,35 +235,31 @@ Individual Model Outputs:
                         synth_client = Groq(api_key=groq_key)
                         synth_res = synth_client.chat.completions.create(
                             model="llama-3.1-8b-instant",
-                            messages=[{"role": "user", "content": synthesis_prompt}]
+                            messages=[{"role": "user", "content": synthesis_prompt}],
+                            timeout=10
                         )
                         consolidated_output = synth_res.choices[0].message.content
                     elif gemini_key and use_gemini:
                         genai.configure(api_key=gemini_key)
-                        synth_model = genai.GenerativeModel("gemini-3.8-flash")
+                        synth_model = genai.GenerativeModel("gemini-1.5-flash")
                         synth_res = synth_model.generate_content(synthesis_prompt)
                         consolidated_output = synth_res.text
-                    else:
-                        consolidated_output = list(valid_responses.values())[0]
                 except Exception as e:
-                    consolidated_output = f"Consolidation synthesis skipped due to error: {e}"
-            else:
-                consolidated_output = "⚠️ Could not generate a consolidated synthesis because all active model queries encountered errors."
+                    consolidated_output = f"Synthesis skipped: {e}"
 
-            status.update(label="Pipeline execution complete!", state="complete", expanded=False)
+            status.update(label="Done!", state="complete", expanded=False)
         
-        # Format and display the final compiled markdown
+        # Render markdown results
         final_output_markdown = ""
-        
         if consolidated_output:
-            final_output_markdown += f"### 🏆 Final Consolidated & Refined Synthesis\n\n{consolidated_output}\n\n---\n\n"
+            final_output_markdown += f"### 🏆 Final Consolidated Synthesis\n\n{consolidated_output}\n\n---\n\n"
 
         if model_responses:
             final_output_markdown += "### 🌐 Individual Model Responses:\n\n"
             for name, text in model_responses.items():
                 final_output_markdown += f"#### **{name}**\n{text}\n\n---\n"
         else:
-            final_output_markdown = "⚠️ **Warning:** No models were queried. Check your sidebar settings."
+            final_output_markdown = "⚠️ **Warning:** No models were queried."
 
         st.markdown(final_output_markdown)
         st.session_state.messages.append({"role": "assistant", "content": final_output_markdown})
