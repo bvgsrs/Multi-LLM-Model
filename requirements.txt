@@ -1,0 +1,8 @@
+streamlit
+openai
+anthropic
+google-genai
+sentence-transformers
+scikit-learn
+numpy
+groq
