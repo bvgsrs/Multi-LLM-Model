@@ -18,7 +18,7 @@ from groq import AsyncGroq
 # Page Configuration
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Unified Multi-LLM Orchestrator [Resilient]", page_layout="wide"
+    page_title="Unified Multi-LLM Orchestrator [Resilient]", layout="wide"
 )
 
 st.title("⚡ Unified Multi-LLM Engine [Auto-Fallback]")
