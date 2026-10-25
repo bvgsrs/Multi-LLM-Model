@@ -4,7 +4,7 @@ from pypdf import PdfReader
 from docx import Document
 from PIL import Image
 
-# Import official model libraries (ensure these are in your requirements.txt)
+# Import official model libraries
 from openai import OpenAI
 import anthropic
 import google.generativeai as genai
@@ -154,7 +154,7 @@ if user_prompt := st.chat_input("Type a message or ask a question about your fil
                 st.write("Querying Gemini...")
                 try:
                     genai.configure(api_key=gemini_key)
-                    model = genai.GenerativeModel("gemini-1.5-pro")
+                    model = genai.GenerativeModel("gemini-1.5-flash")
                     res = model.generate_content(full_payload)
                     model_responses["Gemini"] = res.text
                 except Exception as e:
@@ -173,15 +173,15 @@ if user_prompt := st.chat_input("Type a message or ask a question about your fil
                 except Exception as e:
                     model_responses["Llama 3 (Groq)"] = f"Error: {e}"
 
-            status.update(label="All models responded successfully!", state="complete", expanded=False)
+            status.update(label="Execution finished!", state="complete", expanded=False)
         
         # Format and display combined outputs
-        final_output_markdown = "### 🌐 Multi-LLM Synthesis & Consensus Results\n\n"
-        for name, text in model_responses.items():
-            final_output_markdown += f"#### **{name}**\n{text}\n\n---\n"
-            
-        if not model_responses:
-            final_output_markdown = "⚠️ **Warning:** No models were queried. Please ensure at least one model is checked and its corresponding API key is provided in the sidebar."
+        if model_responses:
+            final_output_markdown = "### 🌐 Multi-LLM Synthesis & Consensus Results\n\n"
+            for name, text in model_responses.items():
+                final_output_markdown += f"#### **{name}**\n{text}\n\n---\n"
+        else:
+            final_output_markdown = "⚠️ **Warning:** No models were queried. Please ensure at least one model checkbox is selected and its API key is configured."
 
         st.markdown(final_output_markdown)
         st.session_state.messages.append({"role": "assistant", "content": final_output_markdown})
