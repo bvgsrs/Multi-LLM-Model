@@ -10,3 +10,4 @@ pandas
 pypdf
 python-docx
 pillow
+google-generativeai
