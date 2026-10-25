@@ -10,20 +10,18 @@ from sklearn.metrics.pairwise import cosine_similarity
 from anthropic import AsyncAnthropic
 from google import genai
 from openai import AsyncOpenAI
-
-# Optional: Groq for free open-source fallback
 from groq import AsyncGroq
 
 # ---------------------------------------------------------
 # Page Configuration
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Unified Multi-LLM Orchestrator [Resilient]", layout="wide"
+    page_title="Unified Multi-LLM Orchestrator [Ollama Pro]", layout="wide"
 )
 
-st.title("⚡ Unified Multi-LLM Engine [Auto-Fallback]")
+st.title("⚡ Unified Multi-LLM Engine [Ollama + Cloud]")
 st.caption(
-    "Query Gemini, Claude, and ChatGPT with automatic error handling, partial-consensus calculation, and free-tier fallbacks."
+    "Query Gemini, Claude, ChatGPT, Groq, and Local Ollama models simultaneously with semantic consensus scoring and synthesis."
 )
 
 @st.cache_resource
@@ -36,11 +34,17 @@ embedder = load_embedding_model()
 # Sidebar Configuration
 # ---------------------------------------------------------
 with st.sidebar:
-    st.header("🔑 API Configuration")
+    st.header("🔑 Cloud API Configuration")
     openai_key = st.text_input("OpenAI API Key", value=os.getenv("OPENAI_API_KEY", ""), type="password")
     claude_key = st.text_input("Anthropic API Key", value=os.getenv("ANTHROPIC_API_KEY", ""), type="password")
     gemini_key = st.text_input("Gemini API Key", value=os.getenv("GEMINI_API_KEY", ""), type="password")
     
+    st.markdown("---")
+    st.header("🏠 Local / Free Ollama Setup")
+    use_ollama = st.checkbox("Include Local Ollama Model", value=False)
+    ollama_model = st.text_input("Ollama Model Name", value="llama3.2")
+    ollama_base_url = st.text_input("Ollama Endpoint", value="http://localhost:11434/v1")
+
     st.markdown("---")
     st.header("🛡️ Fallback Settings")
     use_groq_fallback = st.checkbox("Fallback to Groq (Free Llama 3) if OpenAI/Claude fail", value=True)
@@ -48,12 +52,13 @@ with st.sidebar:
 
     st.markdown("---")
     st.header("⚖️ Model Influence Weights")
-    weight_gpt = st.slider("ChatGPT Weight", 0.0, 1.0, 0.33)
-    weight_claude = st.slider("Claude Weight", 0.0, 1.0, 0.33)
-    weight_gemini = st.slider("Gemini Weight", 0.0, 1.0, 0.33)
+    weight_gpt = st.slider("ChatGPT Weight", 0.0, 1.0, 0.25)
+    weight_claude = st.slider("Claude Weight", 0.0, 1.0, 0.25)
+    weight_gemini = st.slider("Gemini Weight", 0.0, 1.0, 0.25)
+    weight_ollama = st.slider("Ollama Weight", 0.0, 1.0, 0.25)
 
 # ---------------------------------------------------------
-# Resilient Asynchronous LLM Runners with Fallbacks
+# Asynchronous LLM Runners
 # ---------------------------------------------------------
 async def get_groq_fallback(prompt: str, api_key: str, model_name: str = "llama-3.3-70b-versatile") -> str:
     try:
@@ -118,31 +123,45 @@ async def get_gemini_response(prompt: str, api_key: str) -> str:
     except Exception as e:
         return f"[Gemini Error/Limit]: {str(e)}"
 
-async def run_all_llms(prompt: str, keys: dict):
+async def get_ollama_response(prompt: str, model: str, base_url: str, enabled: bool) -> str:
+    if not enabled:
+        return "[Ollama Skipped]: Not enabled in sidebar."
+    try:
+        # Ollama exposes an OpenAI-compatible endpoint
+        client = AsyncOpenAI(base_url=base_url, api_key="ollama")
+        res = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+        )
+        return res.choices[0].message.content
+    except Exception as e:
+        return f"[Ollama Error - Is Ollama running?]: {str(e)}"
+
+async def run_all_llms(prompt: str, keys: dict, ollama_cfg: dict):
     groq_backup = keys["groq"] if keys["use_groq"] else ""
     tasks = [
         get_chatgpt_response(prompt, keys["openai"], groq_backup),
         get_claude_response(prompt, keys["claude"], groq_backup),
         get_gemini_response(prompt, keys["gemini"]),
+        get_ollama_response(prompt, ollama_cfg["model"], ollama_cfg["base_url"], ollama_cfg["enabled"])
     ]
     return await asyncio.gather(*tasks)
 
 # ---------------------------------------------------------
-# Dynamic Closeness Calculation (Handles Partial Responses)
+# Dynamic Closeness Calculation
 # ---------------------------------------------------------
 def calculate_closeness_scores(responses: dict):
-    """Dynamically calculates similarity even if one or more models returned errors."""
     valid_keys = []
     valid_texts = []
     
     for k, text in responses.items():
-        if not text.startswith("[ChatGPT Error") and not text.startswith("[Claude Error") and not text.startswith("[Gemini Error") and not text.startswith("[ChatGPT Skipped") and not text.startswith("[Claude Skipped") and not text.startswith("[Gemini Skipped"):
+        if not any(text.startswith(prefix) for prefix in ["[ChatGPT Error", "[Claude Error", "[Gemini Error", "[Ollama Error", "[ChatGPT Skipped", "[Claude Skipped", "[Gemini Skipped", "[Ollama Skipped"]):
             valid_keys.append(k)
             valid_texts.append(text)
             
     if len(valid_texts) < 2:
-        # If fewer than 2 models succeeded, return default baseline metrics
-        return {"chatgpt": 50.0, "claude": 50.0, "gemini": 50.0}, 50.0
+        return {k: 50.0 for k in responses.keys()}, 50.0
 
     embeddings = embedder.encode(valid_texts)
     sim_matrix = cosine_similarity(embeddings)
@@ -152,11 +171,11 @@ def calculate_closeness_scores(responses: dict):
         other_similarities = [sim_matrix[i][j] for j in range(len(valid_keys)) if i != j]
         scores[key] = round((sum(other_similarities) / len(other_similarities)) * 100, 1) if other_similarities else 50.0
         
-    # Fill missing ones with baseline
     full_scores = {
         "chatgpt": scores.get("chatgpt", 0.0),
         "claude": scores.get("claude", 0.0),
-        "gemini": scores.get("gemini", 0.0)
+        "gemini": scores.get("gemini", 0.0),
+        "ollama": scores.get("ollama", 0.0)
     }
     
     overall_consensus = round(float(np.mean(sim_matrix)) * 100, 1)
@@ -177,6 +196,7 @@ def generate_synthesis(prompt: str, responses: dict, api_key: str, weights: dict
     - ChatGPT: {responses['chatgpt']}
     - Claude: {responses['claude']}
     - Gemini: {responses['gemini']}
+    - Ollama (Local): {responses['ollama']}
     
     Provide Markdown formatted output:
     1. **Unified Synthesis**: Best combined answer.
@@ -191,9 +211,9 @@ def generate_synthesis(prompt: str, responses: dict, api_key: str, weights: dict
 # ---------------------------------------------------------
 # Main App Layout
 # ---------------------------------------------------------
-user_prompt = st.text_area("Enter your prompt:", height=120, placeholder="e.g., Outline a robust API rate-limiting strategy.")
+user_prompt = st.text_area("Enter your prompt:", height=120, placeholder="e.g., Explain event-driven microservices architecture.")
 
-if st.button("🚀 Run Resilient Multi-LLM Engine", type="primary"):
+if st.button("🚀 Run Multi-LLM Engine with Ollama", type="primary"):
     if not gemini_key:
         st.error("Please provide a Gemini API Key (required for orchestrating the synthesis engine).")
     elif not user_prompt.strip():
@@ -206,15 +226,26 @@ if st.button("🚀 Run Resilient Multi-LLM Engine", type="primary"):
             "groq": groq_key,
             "use_groq": use_groq_fallback
         }
-        weights = {"gpt": weight_gpt, "claude": weight_claude, "gemini": weight_gemini}
+        ollama_cfg = {
+            "enabled": use_ollama,
+            "model": ollama_model,
+            "base_url": ollama_base_url
+        }
+        weights = {
+            "gpt": weight_gpt,
+            "claude": weight_claude,
+            "gemini": weight_gemini,
+            "ollama": weight_ollama
+        }
 
-        with st.spinner("Executing query with fallback safety nets..."):
-            gpt_out, claude_out, gemini_out = asyncio.run(run_all_llms(user_prompt, keys))
+        with st.spinner("Executing query across cloud and local Ollama models..."):
+            gpt_out, claude_out, gemini_out, ollama_out = asyncio.run(run_all_llms(user_prompt, keys, ollama_cfg))
             
             response_dict = {
                 "chatgpt": gpt_out,
                 "claude": claude_out,
-                "gemini": gemini_out
+                "gemini": gemini_out,
+                "ollama": ollama_out
             }
 
             alignment_scores, consensus = calculate_closeness_scores(response_dict)
@@ -240,7 +271,7 @@ if "last_result" in st.session_state:
         st.metric("Global Consensus Match", f"{data['consensus_score']}%")
     with col_c2:
         st.progress(data['consensus_score'] / 100)
-        st.caption("🛡️ **Fallback engine executed successfully. Errors caught and handled gracefully.**")
+        st.caption("🛡️ **Multi-model engine executed successfully including local Ollama integration.**")
 
     tab_synthesis, tab_comparison, tab_raw = st.tabs(
         ["✨ Unified Synthesis", "📊 Model Scorecard", "📝 Raw Outputs"]
@@ -250,36 +281,43 @@ if "last_result" in st.session_state:
         st.markdown(data["synthesis"])
 
     with tab_comparison:
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         with c1:
-            st.subheader("ChatGPT / Backup")
+            st.subheader("ChatGPT")
             st.metric("Alignment", f"{data['metrics']['chatgpt']}%")
-            st.info(data["raw_responses"]["chatgpt"][:300] + "...")
+            st.info(data["raw_responses"]["chatgpt"][:250] + "...")
         with c2:
-            st.subheader("Claude / Backup")
+            st.subheader("Claude")
             st.metric("Alignment", f"{data['metrics']['claude']}%")
-            st.info(data["raw_responses"]["claude"][:300] + "...")
+            st.info(data["raw_responses"]["claude"][:250] + "...")
         with c3:
             st.subheader("Gemini")
             st.metric("Alignment", f"{data['metrics']['gemini']}%")
-            st.info(data["raw_responses"]["gemini"][:300] + "...")
+            st.info(data["raw_responses"]["gemini"][:250] + "...")
+        with c4:
+            st.subheader("Ollama (Local)")
+            st.metric("Alignment", f"{data['metrics']['ollama']}%")
+            st.info(data["raw_responses"]["ollama"][:250] + "...")
 
     with tab_raw:
-        col_a, col_b, col_c = st.columns(3)
+        col_a, col_b, col_c, col_d = st.columns(4)
         with col_a:
             st.subheader("ChatGPT Raw")
-            st.text_area("GPT", data["raw_responses"]["chatgpt"], height=400)
+            st.text_area("GPT", data["raw_responses"]["chatgpt"], height=350)
         with col_b:
             st.subheader("Claude Raw")
-            st.text_area("Claude", data["raw_responses"]["claude"], height=400)
+            st.text_area("Claude", data["raw_responses"]["claude"], height=350)
         with col_c:
             st.subheader("Gemini Raw")
-            st.text_area("Gemini", data["raw_responses"]["gemini"], height=400)
+            st.text_area("Gemini", data["raw_responses"]["gemini"], height=350)
+        with col_d:
+            st.subheader("Ollama Raw")
+            st.text_area("Ollama", data["raw_responses"]["ollama"], height=350)
 
     st.markdown("---")
     st.download_button(
         label="📥 Export Session Report as JSON",
         data=json.dumps(data, indent=2),
-        file_name="resilient_multi_llm_report.json",
+        file_name="ollama_multi_llm_report.json",
         mime="application/json",
     )
