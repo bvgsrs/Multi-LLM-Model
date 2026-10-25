@@ -43,8 +43,8 @@ with st.sidebar:
     st.divider()
     
     st.subheader("Select Models")
-    use_llama = st.checkbox("Groq (Llama 3.1)", value=True)
-    use_gemini = st.checkbox("Gemini (1.5 Flash)", value=True)
+    use_llama = st.checkbox("Groq (Llama 3.3)", value=True)
+    use_gemini = st.checkbox("Gemini (2.5 Flash)", value=True)
     use_gpt = st.checkbox("GPT-4o (Paid)", value=False)
     use_claude = st.checkbox("Claude 3.5 Sonnet (Paid)", value=False)
     
@@ -119,7 +119,7 @@ raw_input = st.chat_input("Type a message, question, or index number (e.g., 1)..
 
 if raw_input:
     clean_input = raw_input.strip()
-    # Check if user entered an index number (e.g. "1", "2")
+    # Check if user entered an index number (e.g., "1")
     if clean_input.isdigit() and int(clean_input) in st.session_state.prompt_library:
         user_prompt = st.session_state.prompt_library[int(clean_input)]
         st.toast(f"Resolved Index [{clean_input}] to: '{user_prompt}'", icon="📌")
@@ -143,14 +143,14 @@ if raw_input:
             
             def call_gemini(key, prompt):
                 genai.configure(api_key=key)
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                model = genai.GenerativeModel("gemini-2.5-flash")
                 response = model.generate_content(prompt)
                 return response.text
 
-            # Prioritize fast, working free-tier models first so it doesn't lag
+            # Prioritized working models with updated stable identifiers
             models_to_try = [
-                ("Groq (Llama 3.1)", use_llama, groq_key, lambda: Groq(api_key=groq_key).chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": full_payload}]).choices[0].message.content),
-                ("Gemini (1.5 Flash)", use_gemini, gemini_key, lambda: call_gemini(gemini_key, full_payload)),
+                ("Groq (Llama 3.3)", use_llama, groq_key, lambda: Groq(api_key=groq_key).chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": full_payload}]).choices[0].message.content),
+                ("Gemini (2.5 Flash)", use_gemini, gemini_key, lambda: call_gemini(gemini_key, full_payload)),
                 ("GPT-4o", use_gpt, openai_key, lambda: OpenAI(api_key=openai_key).chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": full_payload}]).choices[0].message.content),
                 ("Claude 3.5 Sonnet", use_claude, anthropic_key, lambda: anthropic.Anthropic(api_key=anthropic_key).messages.create(model="claude-3-5-sonnet-20241022", max_tokens=1024, messages=[{"role": "user", "content": full_payload}]).content[0].text)
             ]
