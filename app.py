@@ -13,10 +13,7 @@ st.set_page_config(page_title="Multi-LLM Model Orchestrator", layout="wide")
 with st.sidebar:
     st.header("⚙️ Configuration & Models")
     
-    # 1. API Keys Input with automatic Secrets fallback
     st.subheader("API Keys & Links")
-    
-    # Check server secrets first, default to empty string if not found
     default_openai = st.secrets.get("OPENAI_API_KEY", "")
     default_anthropic = st.secrets.get("ANTHROPIC_API_KEY", "")
     default_gemini = st.secrets.get("GEMINI_API_KEY", "")
@@ -36,7 +33,6 @@ with st.sidebar:
     
     st.divider()
     
-    # 2. Model Selections
     st.subheader("Select Models")
     use_gpt = st.checkbox("GPT-4o ([OpenAI Site](https://openai.com))", value=True)
     use_claude = st.checkbox("Claude 3.5 Sonnet ([Anthropic Site](https://www.anthropic.com))", value=True)
@@ -45,7 +41,6 @@ with st.sidebar:
     
     st.divider()
     
-    # 3. Consensus / Model Weights
     st.subheader("Model Weights")
     weight_gpt = st.slider("GPT Weight", 0.0, 1.0, 0.25)
     weight_claude = st.slider("Claude Weight", 0.0, 1.0, 0.25)
@@ -53,7 +48,7 @@ with st.sidebar:
     weight_llama = st.slider("Llama Weight", 0.0, 1.0, 0.25)
 
 # ==========================================
-# MAIN PAGE: Title, File Uploads, & Prompts
+# MAIN PAGE: Title & File Uploads
 # ==========================================
 st.title("🤖 Multi-LLM Model Orchestrator")
 
@@ -71,36 +66,61 @@ if uploaded_files:
         file_extension = uploaded_file.name.split(".")[-1].lower()
         
         try:
-            # Handle CSV Files
             if file_extension == "csv":
                 df = pd.read_csv(uploaded_file)
                 file_contexts.append(f"--- File: {uploaded_file.name} (CSV) ---\n{df.to_string(index=False)}")
-            
-            # Handle PDF Files
             elif file_extension == "pdf":
                 reader = PdfReader(uploaded_file)
                 pdf_text = "".join([page.extract_text() for page in reader.pages if page.extract_text()])
                 file_contexts.append(f"--- File: {uploaded_file.name} (PDF) ---\n{pdf_text}")
-            
-            # Handle Word Documents (.docx)
             elif file_extension in ["doc", "docx"]:
                 doc = Document(uploaded_file)
                 doc_text = "\n".join([para.text for para in doc.paragraphs if para.text])
                 file_contexts.append(f"--- File: {uploaded_file.name} (Word Doc) ---\n{doc_text}")
-            
-            # Handle Images / Screenshots
             elif file_extension in ["png", "jpg", "jpeg"]:
                 image = Image.open(uploaded_file)
                 st.image(image, caption=f"Uploaded: {uploaded_file.name}", width=300)
                 file_contexts.append(f"--- File: {uploaded_file.name} (Image Uploaded) ---")
-                
         except Exception as e:
             st.error(f"Error processing {uploaded_file.name}: {e}")
 
-# Prompt Input Area
-user_prompt = st.text_area("Enter your prompt:", "e.g., Review the attached document and summarize key insights.")
+st.divider()
 
-if st.button("🚀 Run Multi-LLM Engine"):
-    # Combine prompt text and contents extracted from documents/files
-    full_payload = user_prompt + "\n\n" + "\n".join(file_contexts)
-    st.write("Processing query with attached context across selected models...")
+# ==========================================
+# CHAT INTERFACE FOR RESULTS
+# ==========================================
+st.subheader("💬 Chat & Consensus Output")
+
+# Initialize chat history in session state if it doesn't exist
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Display prior chat messages
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# Accept user chat input at the bottom
+if user_prompt := st.chat_input("Ask a follow-up or give instructions for the attached documents..."):
+    # Add user message to state and display it
+    st.session_state.messages.append({"role": "user", "content": user_prompt})
+    with st.chat_message("user"):
+        st.markdown(user_prompt)
+
+    # Generate assistant response with a status spinner/loader
+    with st.chat_message("assistant"):
+        with st.status("Running multi-model consensus engine...", expanded=True) as status:
+            st.write("Reading attached document contexts...")
+            full_payload = user_prompt + "\n\n" + "\n".join(file_contexts)
+            
+            st.write("Dispatching queries across selected LLMs...")
+            # --- PUT YOUR LLM API EXECUTION CODE HERE ---
+            # e.g., response_text = call_all_models(full_payload, ...)
+            
+            # Placeholder response for demonstration:
+            response_text = f"**Consensus Output:** Analyzed your request alongside the attached documents. *(Connect your multi-model backend execution here to stream real responses!)*"
+            
+            status.update(label="Complete!", state="complete", expanded=False)
+            
+        st.markdown(response_text)
+        st.session_state.messages.append({"role": "assistant", "content": response_text})
