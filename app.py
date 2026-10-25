@@ -43,17 +43,16 @@ with st.sidebar:
     st.divider()
     
     st.subheader("Select Models")
-    use_gpt = st.checkbox("GPT-4o", value=True)
-    use_claude = st.checkbox("Claude 3.5 Sonnet", value=True)
-    use_gemini = st.checkbox("Gemini (3.8 Flash)", value=True)
-    use_llama = st.checkbox("Groq (GPT-OSS)", value=True)
+    use_llama = st.checkbox("Groq (Llama 3.1)", value=True)
+    use_gemini = st.checkbox("Gemini (1.5 Flash)", value=True)
+    use_gpt = st.checkbox("GPT-4o (Paid)", value=False)
+    use_claude = st.checkbox("Claude 3.5 Sonnet (Paid)", value=False)
     
     st.divider()
     
     st.subheader("📌 Prompt Indexing Library")
-    st.markdown("Save frequent prompts and use their index number (e.g., `1`) in the chat box.")
+    st.markdown("Use index numbers (e.g., `1`) in the chat box to send saved prompts instantly.")
     
-    # Add new indexed prompt
     new_idx = len(st.session_state.prompt_library) + 1
     with st.form("add_index_form", clear_on_submit=True):
         custom_prompt_text = st.text_area("Prompt text to index:")
@@ -63,7 +62,6 @@ with st.sidebar:
             st.success(f"Saved as Index [{new_idx}]!")
             st.rerun()
             
-    # Display current index mapping table
     st.write("**Current Index Mapping:**")
     for idx, p_text in st.session_state.prompt_library.items():
         st.code(f"[{idx}]: {p_text}", language="text")
@@ -81,7 +79,6 @@ uploaded_files = st.file_uploader(
 )
 
 file_contexts = []
-
 if uploaded_files:
     for uploaded_file in uploaded_files:
         file_extension = uploaded_file.name.split(".")[-1].lower()
@@ -114,7 +111,6 @@ st.subheader("💬 Chat & Consensus Output")
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display conversation history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
@@ -122,8 +118,8 @@ for message in st.session_state.messages:
 raw_input = st.chat_input("Type a message, question, or index number (e.g., 1)...")
 
 if raw_input:
-    # Check if user typed an index number (e.g., "1")
     clean_input = raw_input.strip()
+    # Check if user entered an index number (e.g. "1", "2")
     if clean_input.isdigit() and int(clean_input) in st.session_state.prompt_library:
         user_prompt = st.session_state.prompt_library[int(clean_input)]
         st.toast(f"Resolved Index [{clean_input}] to: '{user_prompt}'", icon="📌")
@@ -145,19 +141,18 @@ if raw_input:
             
             model_responses = {}
             
-            # Helper for Gemini using active 3.8 Flash identifier
             def call_gemini(key, prompt):
                 genai.configure(api_key=key)
-                model = genai.GenerativeModel("gemini-3.8-flash")
+                model = genai.GenerativeModel("gemini-1.5-flash")
                 response = model.generate_content(prompt)
                 return response.text
 
-            # Updated models list using active stable endpoints
+            # Prioritize fast, working free-tier models first so it doesn't lag
             models_to_try = [
+                ("Groq (Llama 3.1)", use_llama, groq_key, lambda: Groq(api_key=groq_key).chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": full_payload}]).choices[0].message.content),
+                ("Gemini (1.5 Flash)", use_gemini, gemini_key, lambda: call_gemini(gemini_key, full_payload)),
                 ("GPT-4o", use_gpt, openai_key, lambda: OpenAI(api_key=openai_key).chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": full_payload}]).choices[0].message.content),
-                ("Claude 3.5 Sonnet", use_claude, anthropic_key, lambda: anthropic.Anthropic(api_key=anthropic_key).messages.create(model="claude-3-5-sonnet-20241022", max_tokens=1024, messages=[{"role": "user", "content": full_payload}]).content[0].text),
-                ("Gemini", use_gemini, gemini_key, lambda: call_gemini(gemini_key, full_payload)),
-                ("Groq (GPT-OSS)", use_llama, groq_key, lambda: Groq(api_key=groq_key).chat.completions.create(model="openai/gpt-oss-120b", messages=[{"role": "user", "content": full_payload}]).choices[0].message.content)
+                ("Claude 3.5 Sonnet", use_claude, anthropic_key, lambda: anthropic.Anthropic(api_key=anthropic_key).messages.create(model="claude-3-5-sonnet-20241022", max_tokens=1024, messages=[{"role": "user", "content": full_payload}]).content[0].text)
             ]
 
             for name, is_selected, key, api_call in models_to_try:
@@ -174,13 +169,12 @@ if raw_input:
 
             status.update(label="Execution sequence complete!", state="complete", expanded=False)
         
-        # Format and display results
         if model_responses:
-            final_output_markdown = "### 🌐 Multi-LLM Execution & Fallback Results\n\n"
+            final_output_markdown = "### 🌐 Multi-LLM Execution Results\n\n"
             for name, text in model_responses.items():
                 final_output_markdown += f"#### **{name}**\n{text}\n\n---\n"
         else:
-            final_output_markdown = "⚠️ **Warning:** No models were successfully queried. Check your API keys and balances."
+            final_output_markdown = "⚠️ **Warning:** No models were successfully queried. Please check your selected models and API keys."
 
         st.markdown(final_output_markdown)
         st.session_state.messages.append({"role": "assistant", "content": final_output_markdown})
