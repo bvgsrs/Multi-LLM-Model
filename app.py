@@ -123,12 +123,19 @@ if user_prompt := st.chat_input("Type a message or ask a question about your fil
             model_responses = {}
             successful_response = None
             
-            # Define models and execution lambdas
+            # Helper function for Gemini since it requires client configuration before instantiation
+            def call_gemini(key, prompt):
+                genai.configure(api_key=key)
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                response = model.generate_content(prompt)
+                return response.text
+
+            # Define models and execution lambdas with fixed valid names
             models_to_try = [
                 ("GPT-4o", use_gpt, openai_key, lambda: OpenAI(api_key=openai_key).chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": full_payload}]).choices[0].message.content),
                 ("Claude 3.5 Sonnet", use_claude, anthropic_key, lambda: anthropic.Anthropic(api_key=anthropic_key).messages.create(model="claude-3-5-sonnet-20241022", max_tokens=1024, messages=[{"role": "user", "content": full_payload}]).content[0].text),
-                ("Gemini", use_gemini, gemini_key, lambda: (genai.configure(api_key=gemini_key), genai.GenerativeModel("gemini-1.5-flash").generate_content(full_payload).text)[1]),
-                ("Llama 3 (Groq)", use_llama, groq_key, lambda: Groq(api_key=groq_key).chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": full_payload}]).choices[0].message.content)
+                ("Gemini", use_gemini, gemini_key, lambda: call_gemini(gemini_key, full_payload)),
+                ("Llama 3 (Groq)", use_llama, groq_key, lambda: Groq(api_key=groq_key).chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": full_payload}]).choices[0].message.content)
             ]
 
             for name, is_selected, key, api_call in models_to_try:
