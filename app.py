@@ -3,6 +3,7 @@ import pandas as pd
 from pypdf import PdfReader
 from docx import Document
 from PIL import Image
+import concurrent.futures
 
 # Import official model libraries
 from openai import OpenAI
@@ -24,7 +25,7 @@ if "prompt_library" not in st.session_state:
     }
 
 # ==========================================
-# SIDEBAR: Configuration, Models, & Indexing
+# SIDEBAR: Configuration & Keys
 # ==========================================
 with st.sidebar:
     st.header("⚙️ Configuration & Models")
@@ -42,38 +43,40 @@ with st.sidebar:
     
     st.divider()
     
-    st.subheader("Select Models")
-    use_llama = st.checkbox("Groq (Llama 3.1 8B)", value=True)
-    use_gemini = st.checkbox("Gemini (3.8 Flash)", value=True)
+    st.subheader("Select Active Models")
+    use_groq = st.checkbox("Groq (Llama 3.1 8B)", value=True)
+    use_gemini = st.checkbox("Gemini (1.5 Flash)", value=True)
     use_gpt = st.checkbox("GPT-4o (Paid)", value=False)
     use_claude = st.checkbox("Claude 3.5 Sonnet (Paid)", value=False)
     
     st.divider()
     
-    st.subheader("📌 Prompt Indexing Library")
-    st.markdown("Use index numbers (e.g., `1`) in the chat box to send saved prompts instantly.")
-    
-    new_idx = len(st.session_state.prompt_library) + 1
+    st.subheader("📌 Manage Prompt Index")
     with st.form("add_index_form", clear_on_submit=True):
-        custom_prompt_text = st.text_area("Prompt text to index:")
+        custom_prompt_text = st.text_area("Add new prompt to index:")
         submitted = st.form_submit_button("Save to Index")
         if submitted and custom_prompt_text.strip():
+            new_idx = len(st.session_state.prompt_library) + 1
             st.session_state.prompt_library[new_idx] = custom_prompt_text.strip()
             st.success(f"Saved as Index [{new_idx}]!")
             st.rerun()
-            
-    st.write("**Current Index Mapping:**")
-    for idx, p_text in st.session_state.prompt_library.items():
-        st.code(f"[{idx}]: {p_text}", language="text")
 
 # ==========================================
 # MAIN PAGE: Title & File Uploads
 # ==========================================
 st.title("🤖 Multi-LLM Model Orchestrator")
 
+# Visible Index Quick-Reference Bar on the main canvas
+with st.expander("📌 View Quick-Index Library (Type number in chat)", expanded=True):
+    cols = st.columns(len(st.session_state.prompt_library))
+    for i, (idx, p_text) in enumerate(st.session_state.prompt_library.items()):
+        with cols[i]:
+            st.markdown(f"**Index [{idx}]**")
+            st.caption(p_text)
+
 st.subheader("📎 Attach Files for Review (Optional)")
 uploaded_files = st.file_uploader(
-    "Upload PDFs, CSVs, Word Documents, or Screenshots/Images for context",
+    "Upload PDFs, CSVs, Word Documents, or Images",
     type=["pdf", "csv", "doc", "docx", "png", "jpg", "jpeg"],
     accept_multiple_files=True
 )
@@ -104,7 +107,7 @@ if uploaded_files:
 st.divider()
 
 # ==========================================
-# CHAT INTERFACE & EXECUTION LOGIC
+# CHAT INTERFACE & PARALLEL EXECUTION LOGIC
 # ==========================================
 st.subheader("💬 Chat & Consensus Output")
 
@@ -115,11 +118,12 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-raw_input = st.chat_input("Type a message, question, or index number (e.g., 1)...")
+raw_input = st.chat_input("Type a message or enter an index number (e.g., 1)...")
 
 if raw_input:
     clean_input = raw_input.strip()
-    # Check if user entered an index number (e.g., "1")
+    
+    # Instant Index Resolution
     if clean_input.isdigit() and int(clean_input) in st.session_state.prompt_library:
         user_prompt = st.session_state.prompt_library[int(clean_input)]
         st.toast(f"Resolved Index [{clean_input}] to: '{user_prompt}'", icon="📌")
@@ -131,50 +135,90 @@ if raw_input:
         st.markdown(user_prompt)
 
     with st.chat_message("assistant"):
-        with st.status("Running multi-model consensus engine...", expanded=True) as status:
+        with st.status("Running parallel model requests...", expanded=True) as status:
             
             if file_contexts:
-                st.write("Including attached document context...")
                 full_payload = f"Context Documents:\n" + "\n".join(file_contexts) + f"\n\nUser Question: {user_prompt}"
             else:
                 full_payload = user_prompt
             
+            # Define individual worker functions for each model thread
+            def query_groq():
+                try:
+                    client = Groq(api_key=groq_key)
+                    res = client.chat.completions.create(
+                        model="llama-3.1-8b-instant",
+                        messages=[{"role": "user", "content": full_payload}]
+                    )
+                    return "Groq (Llama 3.1 8B)", res.choices[0].message.content
+                except Exception as e:
+                    return "Groq (Llama 3.1 8B)", f"Error: {e}"
+
+            def query_gemini():
+                try:
+                    genai.configure(api_key=gemini_key)
+                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    res = model.generate_content(full_payload)
+                    return "Gemini (1.5 Flash)", res.text
+                except Exception as e:
+                    return "Gemini (1.5 Flash)", f"Error: {e}"
+
+            def query_gpt():
+                try:
+                    client = OpenAI(api_key=openai_key)
+                    res = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[{"role": "user", "content": full_payload}]
+                    )
+                    return "GPT-4o", res.choices[0].message.content
+                except Exception as e:
+                    return "GPT-4o", f"Error: {e}"
+
+            def query_claude():
+                try:
+                    client = anthropic.Anthropic(api_key=anthropic_key)
+                    res = client.messages.create(
+                        model="claude-3-5-sonnet-20241022",
+                        max_tokens=1024,
+                        messages=[{"role": "user", "content": full_payload}]
+                    )
+                    return "Claude 3.5 Sonnet", res.content[0].text
+                except Exception as e:
+                    return "Claude 3.5 Sonnet", f"Error: {e}"
+
+            # Build task list based on selections and keys provided
+            tasks = []
+            if use_groq and groq_key:
+                tasks.append(query_groq)
+            if use_gemini and gemini_key:
+                tasks.append(query_gemini)
+            if use_gpt and openai_key:
+                tasks.append(query_gpt)
+            if use_claude and anthropic_key:
+                tasks.append(query_claude)
+
             model_responses = {}
             
-            def call_gemini(key, prompt):
-                genai.configure(api_key=key)
-                model = genai.GenerativeModel("gemini-3.8-flash")
-                response = model.generate_content(prompt)
-                return response.text
+            # Execute all tasks simultaneously using ThreadPoolExecutor
+            if tasks:
+                st.write(f"Launching {len(tasks)} model threads in parallel...")
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                    future_to_model = {executor.submit(task): task for task in tasks}
+                    for future in concurrent.futures.as_completed(future_to_model):
+                        name, result = future.result()
+                        model_responses[name] = result
+                        st.write(f"Received response from {name}.")
+            else:
+                st.warning("No models selected or API keys missing.")
 
-            # Prioritized working models with current active endpoints
-            models_to_try = [
-                ("Groq (Llama 3.1 8B)", use_llama, groq_key, lambda: Groq(api_key=groq_key).chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": full_payload}]).choices[0].message.content),
-                ("Gemini (3.8 Flash)", use_gemini, gemini_key, lambda: call_gemini(gemini_key, full_payload)),
-                ("GPT-4o", use_gpt, openai_key, lambda: OpenAI(api_key=openai_key).chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": full_payload}]).choices[0].message.content),
-                ("Claude 3.5 Sonnet", use_claude, anthropic_key, lambda: anthropic.Anthropic(api_key=anthropic_key).messages.create(model="claude-3-5-sonnet-20241022", max_tokens=1024, messages=[{"role": "user", "content": full_payload}]).content[0].text)
-            ]
-
-            for name, is_selected, key, api_call in models_to_try:
-                if is_selected and key:
-                    st.write(f"Attempting query with {name}...")
-                    try:
-                        res_text = api_call()
-                        model_responses[name] = res_text
-                        st.success(f"Successfully received response from {name}!")
-                    except Exception as e:
-                        error_msg = str(e)
-                        model_responses[name] = f"Error: {error_msg}"
-                        st.warning(f"{name} failed.")
-
-            status.update(label="Execution sequence complete!", state="complete", expanded=False)
+            status.update(label="All parallel threads complete!", state="complete", expanded=False)
         
         if model_responses:
-            final_output_markdown = "### 🌐 Multi-LLM Execution Results\n\n"
+            final_output_markdown = "### 🌐 Parallel Execution Results:\n\n"
             for name, text in model_responses.items():
                 final_output_markdown += f"#### **{name}**\n{text}\n\n---\n"
         else:
-            final_output_markdown = "⚠️ **Warning:** No models were successfully queried. Please check your selected models and API keys."
+            final_output_markdown = "⚠️ **Warning:** No models were queried. Check your sidebar settings."
 
         st.markdown(final_output_markdown)
         st.session_state.messages.append({"role": "assistant", "content": final_output_markdown})
