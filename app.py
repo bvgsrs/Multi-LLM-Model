@@ -48,13 +48,13 @@ with st.sidebar:
     weight_llama = st.slider("Llama Weight", 0.0, 1.0, 0.25)
 
 # ==========================================
-# MAIN PAGE: Title & File Uploads
+# MAIN PAGE: Title & File Uploads (Optional)
 # ==========================================
 st.title("🤖 Multi-LLM Model Orchestrator")
 
-st.subheader("📎 Attach Files for Review")
+st.subheader("📎 Attach Files for Review (Optional)")
 uploaded_files = st.file_uploader(
-    "Upload PDFs, CSVs, Word Documents, or Screenshots/Images",
+    "Upload PDFs, CSVs, Word Documents, or Screenshots/Images for context",
     type=["pdf", "csv", "doc", "docx", "png", "jpg", "jpeg"],
     accept_multiple_files=True
 )
@@ -87,38 +87,37 @@ if uploaded_files:
 st.divider()
 
 # ==========================================
-# CHAT INTERFACE FOR RESULTS
+# CHAT INTERFACE
 # ==========================================
 st.subheader("💬 Chat & Consensus Output")
 
-# Initialize chat history in session state if it doesn't exist
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display prior chat messages
+# Display conversation history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Accept user chat input at the bottom
-if user_prompt := st.chat_input("Ask a follow-up or give instructions for the attached documents..."):
-    # Add user message to state and display it
+# Chat input handles both text-only prompts and document-backed questions
+if user_prompt := st.chat_input("Type a message or ask a question about your files..."):
     st.session_state.messages.append({"role": "user", "content": user_prompt})
     with st.chat_message("user"):
         st.markdown(user_prompt)
 
-    # Generate assistant response with a status spinner/loader
     with st.chat_message("assistant"):
-        with st.status("Running multi-model consensus engine...", expanded=True) as status:
-            st.write("Reading attached document contexts...")
-            full_payload = user_prompt + "\n\n" + "\n".join(file_contexts)
+        with st.status("Processing query...", expanded=True) as status:
+            if file_contexts:
+                st.write("Including attached document context...")
+                full_payload = user_prompt + "\n\n" + "\n".join(file_contexts)
+            else:
+                st.write("Running text-only query...")
+                full_payload = user_prompt
             
             st.write("Dispatching queries across selected LLMs...")
-            # --- PUT YOUR LLM API EXECUTION CODE HERE ---
-            # e.g., response_text = call_all_models(full_payload, ...)
             
-            # Placeholder response for demonstration:
-            response_text = f"**Consensus Output:** Analyzed your request alongside the attached documents. *(Connect your multi-model backend execution here to stream real responses!)*"
+            # --- PUT YOUR MULTI-LLM EXECUTION LOGIC HERE USING 'full_payload' ---
+            response_text = f"**Consensus Output:** Handled your request successfully! *(Plug in your multi-model backend here to stream results).* "
             
             status.update(label="Complete!", state="complete", expanded=False)
             
