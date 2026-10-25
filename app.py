@@ -12,7 +12,7 @@ import google.generativeai as genai
 from groq import Groq
 
 # --- Page Configuration ---
-st.set_page_config(page_title="Multi-LLM Model Orchestrator", layout="wide")
+st.set_page_config(page_title="Multi-LLM Model Orchestrator & Synthesizer", layout="wide")
 
 # ==========================================
 # SESSION STATE: Prompt Indexing Library
@@ -44,8 +44,8 @@ with st.sidebar:
     st.divider()
     
     st.subheader("Select Active Models")
-    use_groq = st.checkbox("Groq (Llama 3)", value=True)
-    use_gemini = st.checkbox("Gemini (Pro)", value=True)
+    use_groq = st.checkbox("Groq (Llama 3.3)", value=True)
+    use_gemini = st.checkbox("Gemini (3.8 Flash)", value=True)
     use_gpt = st.checkbox("GPT-4o (Paid)", value=False)
     use_claude = st.checkbox("Claude 3.5 Sonnet (Paid)", value=False)
     
@@ -143,26 +143,26 @@ if raw_input:
             else:
                 full_payload = user_prompt
             
-            # 1. Parallel Workers with stable, active model identifiers
+            # 1. Parallel Workers with current active model endpoints
             def query_groq():
                 try:
                     client = Groq(api_key=groq_key)
                     res = client.chat.completions.create(
-                        model="llama3-70b-8192",
+                        model="llama-3.3-70b-versatile",
                         messages=[{"role": "user", "content": full_payload}]
                     )
-                    return "Groq (Llama 3)", res.choices[0].message.content
+                    return "Groq (Llama 3.3)", res.choices[0].message.content
                 except Exception as e:
-                    return "Groq (Llama 3)", f"Error: {e}"
+                    return "Groq (Llama 3.3)", f"Error: {e}"
 
             def query_gemini():
                 try:
                     genai.configure(api_key=gemini_key)
-                    model = genai.GenerativeModel("gemini-pro")
+                    model = genai.GenerativeModel("gemini-3.8-flash")
                     res = model.generate_content(full_payload)
-                    return "Gemini (Pro)", res.text
+                    return "Gemini (3.8 Flash)", res.text
                 except Exception as e:
-                    return "Gemini (Pro)", f"Error: {e}"
+                    return "Gemini (3.8 Flash)", f"Error: {e}"
 
             def query_gpt():
                 try:
@@ -233,17 +233,16 @@ Individual Model Outputs:
                     if groq_key and use_groq:
                         synth_client = Groq(api_key=groq_key)
                         synth_res = synth_client.chat.completions.create(
-                            model="llama3-70b-8192",
+                            model="llama-3.3-70b-versatile",
                             messages=[{"role": "user", "content": synthesis_prompt}]
                         )
                         consolidated_output = synth_res.choices[0].message.content
                     elif gemini_key and use_gemini:
                         genai.configure(api_key=gemini_key)
-                        synth_model = genai.GenerativeModel("gemini-pro")
+                        synth_model = genai.GenerativeModel("gemini-3.8-flash")
                         synth_res = synth_model.generate_content(synthesis_prompt)
                         consolidated_output = synth_res.text
                     else:
-                        # Fallback to whatever valid response we have
                         consolidated_output = list(valid_responses.values())[0]
                 except Exception as e:
                     consolidated_output = f"Consolidation synthesis skipped due to error: {e}"
