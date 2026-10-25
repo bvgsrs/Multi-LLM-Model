@@ -4,10 +4,42 @@ from pypdf import PdfReader
 from docx import Document
 from PIL import Image
 
-# --- 1. Bring back your main title ---
-st.title("🤖 Multi-LLM Model Orchestrator") # Change this text to whatever your original heading was!
+# --- Page Configuration ---
+st.set_page_config(page_title="Multi-LLM Model Orchestrator", layout="wide")
 
-# --- 2. File Uploader Section ---
+# ==========================================
+# SIDEBAR: Models, Weights, and API Keys
+# ==========================================
+with st.sidebar:
+    st.header("⚙️ Configuration & Models")
+    
+    # 1. API Keys Input
+    st.subheader("API Keys")
+    openai_key = st.text_input("OpenAI API Key", type="password")
+    anthropic_key = st.text_input("Anthropic API Key", type="password")
+    groq_key = st.text_input("Groq API Key", type="password")
+    
+    st.divider()
+    
+    # 2. Model Selections
+    st.subheader("Select Models")
+    use_gpt = st.checkbox("GPT-4o (OpenAI)", value=True)
+    use_claude = st.checkbox("Claude 3.5 Sonnet (Anthropic)", value=True)
+    use_llama = st.checkbox("Llama 3 / Ollama (Groq/Local)", value=True)
+    
+    st.divider()
+    
+    # 3. Consensus / Model Weights
+    st.subheader("Model Weights")
+    weight_gpt = st.slider("GPT Weight", 0.0, 1.0, 0.4)
+    weight_claude = st.slider("Claude Weight", 0.0, 1.0, 0.4)
+    weight_llama = st.slider("Llama Weight", 0.0, 1.0, 0.2)
+
+# ==========================================
+# MAIN PAGE: Title, File Uploads, & Prompts
+# ==========================================
+st.title("🤖 Multi-LLM Model Orchestrator")
+
 st.subheader("📎 Attach Files for Review")
 uploaded_files = st.file_uploader(
     "Upload PDFs, CSVs, Word Documents, or Screenshots/Images",
@@ -22,26 +54,37 @@ if uploaded_files:
         file_extension = uploaded_file.name.split(".")[-1].lower()
         
         try:
+            # Handle CSV Files
             if file_extension == "csv":
                 df = pd.read_csv(uploaded_file)
                 file_contexts.append(f"--- File: {uploaded_file.name} (CSV) ---\n{df.to_string(index=False)}")
+            
+            # Handle PDF Files
             elif file_extension == "pdf":
                 reader = PdfReader(uploaded_file)
                 pdf_text = "".join([page.extract_text() for page in reader.pages if page.extract_text()])
                 file_contexts.append(f"--- File: {uploaded_file.name} (PDF) ---\n{pdf_text}")
+            
+            # Handle Word Documents (.docx)
             elif file_extension in ["doc", "docx"]:
                 doc = Document(uploaded_file)
                 doc_text = "\n".join([para.text for para in doc.paragraphs if para.text])
                 file_contexts.append(f"--- File: {uploaded_file.name} (Word Doc) ---\n{doc_text}")
+            
+            # Handle Images / Screenshots
             elif file_extension in ["png", "jpg", "jpeg"]:
                 image = Image.open(uploaded_file)
                 st.image(image, caption=f"Uploaded: {uploaded_file.name}", width=300)
                 file_contexts.append(f"--- File: {uploaded_file.name} (Image Uploaded) ---")
+                
         except Exception as e:
             st.error(f"Error processing {uploaded_file.name}: {e}")
 
+# Prompt Input Area
 user_prompt = st.text_area("Enter your prompt:", "e.g., Review the attached document and summarize key insights.")
 
 if st.button("🚀 Run Multi-LLM Engine with Ollama"):
+    # Combine prompt text and contents extracted from documents/files
     full_payload = user_prompt + "\n\n" + "\n".join(file_contexts)
-    st.write("Processing query with attached context...")
+    st.write("Processing query with attached context across selected models...")
+    # Add your multi-LLM execution/consensus code logic here using 'full_payload'
