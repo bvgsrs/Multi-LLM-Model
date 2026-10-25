@@ -13,24 +13,30 @@ st.set_page_config(page_title="Multi-LLM Model Orchestrator", layout="wide")
 with st.sidebar:
     st.header("⚙️ Configuration & Models")
     
-    # 1. API Keys Input with direct links to get keys
+    # 1. API Keys Input with automatic Secrets fallback
     st.subheader("API Keys & Links")
     
-    openai_key = st.text_input("OpenAI API Key", type="password")
-    st.markdown("[Get OpenAI API Key](https://platform.openai.com/api-keys)")
+    # Check server secrets first, default to empty string if not found
+    default_openai = st.secrets.get("OPENAI_API_KEY", "")
+    default_anthropic = st.secrets.get("ANTHROPIC_API_KEY", "")
+    default_gemini = st.secrets.get("GEMINI_API_KEY", "")
+    default_groq = st.secrets.get("GROQ_KEY", "")
     
-    anthropic_key = st.text_input("Anthropic API Key", type="password")
-    st.markdown("[Get Anthropic API Key](https://console.anthropic.com/)")
+    openai_key = st.text_input("OpenAI API Key", value=default_openai, type="password")
+    st.markdown("[Get OpenAI API Key](https://openai.com)")
     
-    gemini_key = st.text_input("Gemini API Key", type="password")
-    st.markdown("[Get Gemini API Key](https://aistudio.google.com/app/apikey)")
+    anthropic_key = st.text_input("Anthropic API Key", value=default_anthropic, type="password")
+    st.markdown("[Get Anthropic API Key](https://www.anthropic.com)")
     
-    groq_key = st.text_input("Groq API Key", type="password")
-    st.markdown("[Get Groq API Key](https://console.groq.com/keys)")
+    gemini_key = st.text_input("Gemini API Key", value=default_gemini, type="password")
+    st.markdown("[Get Gemini API Key](https://ai.google.dev)")
+    
+    groq_key = st.text_input("Groq API Key", value=default_groq, type="password")
+    st.markdown("[Get Groq API Key](https://ollama.com)")
     
     st.divider()
     
-    # 2. Model Selections with site links
+    # 2. Model Selections
     st.subheader("Select Models")
     use_gpt = st.checkbox("GPT-4o ([OpenAI Site](https://openai.com))", value=True)
     use_claude = st.checkbox("Claude 3.5 Sonnet ([Anthropic Site](https://www.anthropic.com))", value=True)
