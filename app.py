@@ -14,47 +14,62 @@ from groq import Groq
 st.set_page_config(page_title="Multi-LLM Model Orchestrator", layout="wide")
 
 # ==========================================
-# SIDEBAR: Models, Weights, and API Keys
+# SESSION STATE: Prompt Indexing Library
+# ==========================================
+if "prompt_library" not in st.session_state:
+    st.session_state.prompt_library = {
+        1: "Summarize the key takeaways and action items.",
+        2: "Review the attached context for any logical errors or risks.",
+        3: "Write a professional email response based on this input."
+    }
+
+# ==========================================
+# SIDEBAR: Configuration, Models, & Indexing
 # ==========================================
 with st.sidebar:
     st.header("⚙️ Configuration & Models")
     
-    st.subheader("API Keys & Links")
+    st.subheader("API Keys")
     default_openai = st.secrets.get("OPENAI_API_KEY", "")
     default_anthropic = st.secrets.get("ANTHROPIC_API_KEY", "")
     default_gemini = st.secrets.get("GEMINI_API_KEY", "")
     default_groq = st.secrets.get("GROQ_KEY", "")
     
     openai_key = st.text_input("OpenAI API Key", value=default_openai, type="password")
-    st.markdown("[Get OpenAI API Key](https://openai.com)")
-    
     anthropic_key = st.text_input("Anthropic API Key", value=default_anthropic, type="password")
-    st.markdown("[Get Anthropic API Key](https://www.anthropic.com)")
-    
     gemini_key = st.text_input("Gemini API Key", value=default_gemini, type="password")
-    st.markdown("[Get Gemini API Key](https://ai.google.dev)")
-    
     groq_key = st.text_input("Groq API Key", value=default_groq, type="password")
-    st.markdown("[Get Groq API Key](https://ollama.com)")
     
     st.divider()
     
     st.subheader("Select Models")
-    use_gpt = st.checkbox("GPT-4o ([OpenAI Site](https://openai.com))", value=True)
-    use_claude = st.checkbox("Claude 3.5 Sonnet ([Anthropic Site](https://www.anthropic.com))", value=True)
-    use_gemini = st.checkbox("Gemini ([Google AI Site](https://ai.google.dev))", value=True)
-    use_llama = st.checkbox("Llama 3 / Groq ([Ollama Site](https://ollama.com))", value=True)
+    use_gpt = st.checkbox("GPT-4o", value=True)
+    use_claude = st.checkbox("Claude 3.5 Sonnet", value=True)
+    use_gemini = st.checkbox("Gemini (3.8 Flash)", value=True)
+    use_llama = st.checkbox("Groq (GPT-OSS)", value=True)
     
     st.divider()
     
-    st.subheader("Model Weights")
-    weight_gpt = st.slider("GPT Weight", 0.0, 1.0, 0.25)
-    weight_claude = st.slider("Claude Weight", 0.0, 1.0, 0.25)
-    weight_gemini = st.slider("Gemini Weight", 0.0, 1.0, 0.25)
-    weight_llama = st.slider("Llama Weight", 0.0, 1.0, 0.25)
+    st.subheader("📌 Prompt Indexing Library")
+    st.markdown("Save frequent prompts and use their index number (e.g., `1`) in the chat box.")
+    
+    # Add new indexed prompt
+    new_idx = len(st.session_state.prompt_library) + 1
+    with st.form("add_index_form", clear_on_submit=True):
+        custom_prompt_text = st.text_area("Prompt text to index:")
+        submitted = st.form_submit_button("Save to Index")
+        if submitted and custom_prompt_text.strip():
+            st.session_state.prompt_library[new_idx] = custom_prompt_text.strip()
+            st.success(f"Saved as Index [{new_idx}]!")
+            st.rerun()
+            
+    # Display current index mapping table
+    st.write("**Current Index Mapping:**")
+    for idx, p_text in st.session_state.prompt_library.items():
+        st.code(f"[{idx}]: {p_text}", language="text")
 
 # ==========================================
-# MAIN PAGE: Title & File Uploads (Optional)
+# MAIN PAGE: Title & File Uploads
 # ==========================================
 st.title("🤖 Multi-LLM Model Orchestrator")
 
@@ -70,7 +85,6 @@ file_contexts = []
 if uploaded_files:
     for uploaded_file in uploaded_files:
         file_extension = uploaded_file.name.split(".")[-1].lower()
-        
         try:
             if file_extension == "csv":
                 df = pd.read_csv(uploaded_file)
@@ -93,7 +107,7 @@ if uploaded_files:
 st.divider()
 
 # ==========================================
-# CHAT INTERFACE & MULTI-LLM EXECUTION LOGIC
+# CHAT INTERFACE & EXECUTION LOGIC
 # ==========================================
 st.subheader("💬 Chat & Consensus Output")
 
@@ -105,7 +119,17 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if user_prompt := st.chat_input("Type a message or ask a question about your files..."):
+raw_input = st.chat_input("Type a message, question, or index number (e.g., 1)...")
+
+if raw_input:
+    # Check if user typed an index number (e.g., "1")
+    clean_input = raw_input.strip()
+    if clean_input.isdigit() and int(clean_input) in st.session_state.prompt_library:
+        user_prompt = st.session_state.prompt_library[int(clean_input)]
+        st.toast(f"Resolved Index [{clean_input}] to: '{user_prompt}'", icon="📌")
+    else:
+        user_prompt = raw_input
+
     st.session_state.messages.append({"role": "user", "content": user_prompt})
     with st.chat_message("user"):
         st.markdown(user_prompt)
@@ -113,7 +137,6 @@ if user_prompt := st.chat_input("Type a message or ask a question about your fil
     with st.chat_message("assistant"):
         with st.status("Running multi-model consensus engine...", expanded=True) as status:
             
-            # Prepare payload
             if file_contexts:
                 st.write("Including attached document context...")
                 full_payload = f"Context Documents:\n" + "\n".join(file_contexts) + f"\n\nUser Question: {user_prompt}"
@@ -121,21 +144,20 @@ if user_prompt := st.chat_input("Type a message or ask a question about your fil
                 full_payload = user_prompt
             
             model_responses = {}
-            successful_response = None
             
-            # Helper function for Gemini since it requires client configuration before instantiation
+            # Helper for Gemini using active 3.8 Flash identifier
             def call_gemini(key, prompt):
                 genai.configure(api_key=key)
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                model = genai.GenerativeModel("gemini-3.8-flash")
                 response = model.generate_content(prompt)
                 return response.text
 
-            # Define models and execution lambdas with fixed valid names
+            # Updated models list using active stable endpoints
             models_to_try = [
                 ("GPT-4o", use_gpt, openai_key, lambda: OpenAI(api_key=openai_key).chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": full_payload}]).choices[0].message.content),
                 ("Claude 3.5 Sonnet", use_claude, anthropic_key, lambda: anthropic.Anthropic(api_key=anthropic_key).messages.create(model="claude-3-5-sonnet-20241022", max_tokens=1024, messages=[{"role": "user", "content": full_payload}]).content[0].text),
                 ("Gemini", use_gemini, gemini_key, lambda: call_gemini(gemini_key, full_payload)),
-                ("Llama 3 (Groq)", use_llama, groq_key, lambda: Groq(api_key=groq_key).chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": full_payload}]).choices[0].message.content)
+                ("Groq (GPT-OSS)", use_llama, groq_key, lambda: Groq(api_key=groq_key).chat.completions.create(model="openai/gpt-oss-120b", messages=[{"role": "user", "content": full_payload}]).choices[0].message.content)
             ]
 
             for name, is_selected, key, api_call in models_to_try:
@@ -144,7 +166,6 @@ if user_prompt := st.chat_input("Type a message or ask a question about your fil
                     try:
                         res_text = api_call()
                         model_responses[name] = res_text
-                        successful_response = res_text
                         st.success(f"Successfully received response from {name}!")
                     except Exception as e:
                         error_msg = str(e)
